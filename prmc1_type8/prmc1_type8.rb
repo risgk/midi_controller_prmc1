@@ -178,7 +178,7 @@ class Prmc1Core
     @alternative_arpeggio_intervals = @alternative_arpeggio_intervals_candidate
     @step_division_candidate = 8
     @step_division = @step_division_candidate
-    @sub_steps_of_on_bits_candidate = 0xFF
+    @sub_steps_of_on_bits_candidate = 0x00
     @sub_steps_of_on_bits = @sub_steps_of_on_bits
     @scale_is_pentatonic_candidate = false
     @scale_is_pentatonic = @scale_is_pentatonic_candidate

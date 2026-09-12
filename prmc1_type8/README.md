@@ -1,7 +1,7 @@
 MIDI Controller PRMC-1 (type-8)
 ===============================
 
-**Version 0.2.0 (2026-08-26)**
+**Version 0.2.1 (2026-09-07)**
 
 MIDI Controller made with PicoRuby/R2P2 by ISGK Instruments (Ryo Ishigaki)
 
@@ -68,7 +68,7 @@ Usage
 - Blue Button: Transpose - (min: -24)
 - Red Button: Transpose + (max: +24)
     - With the Blue Button pressed, press the Red Button to increment the program number from 0 to 7 (Program Change)
-- Byte Switch: Sub-Steps of On, 0 - 255
+- Byte Switch: Sub-Step On/Off flags, 0 - 255
     - bit 7: Sub-Step 1 (and 9), ..., bit 0: Sub-Step 8 (and 16)
 
 [MIDI Implementation Chart](./MIDI_Implementation_Chart.md)
@@ -82,6 +82,7 @@ Known Issues
 Change History
 --------------
 
+- Version 0.2.1 (2026-09-07): Fix initial value of Sub-Step On/Off flags
 - Version 0.2.0 (2026-08-26): Display current Sub-Step on Byte Switch LEDs
 - Version 0.1.0 (2026-08-17): Initial release
 
