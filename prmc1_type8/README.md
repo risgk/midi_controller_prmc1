@@ -1,7 +1,7 @@
 MIDI Controller PRMC-1 (type-8)
 ===============================
 
-**Version 0.2.1 (2026-09-07)**
+**Version 0.2.2 (2026-09-28)**
 
 MIDI Controller made with PicoRuby/R2P2 by ISGK Instruments (Ryo Ishigaki)
 
@@ -78,13 +78,6 @@ Known Issues
 ------------
 
 - Calling methods such as `set_blue_led` sometimes result in an IOError (timeout)
-
-Change History
---------------
-
-- Version 0.2.1 (2026-09-07): Fix initial value of Sub-Step On/Off flags
-- Version 0.2.0 (2026-08-26): Display current Sub-Step on Byte Switch LEDs
-- Version 0.1.0 (2026-08-17): Initial release
 
 License
 -------

@@ -1,11 +1,11 @@
 ```
-  [MIDI Controller]                                               Date: 2026-09-07                           
-  Model: PRMC-1 (type-8)          MIDI Implementation Chart       Version: 0.2.1                             
+  [MIDI Controller]                                               Date: 2026-09-28                           
+  Model: PRMC-1 (type-8)          MIDI Implementation Chart       Version: 0.2.2                             
 +-------------------------------+---------------+---------------+-------------------------------------------+
 | Function...                   | Transmitted   | Recognized    | Remarks                                   |
 +-------------------------------+---------------+---------------+-------------------------------------------+
 | Basic        Default          | 1             | x             | See MIDI_CHANNEL                          |
-| Channel      Changed          | 9             | x             | See MIDI_CHANNEL_ALT                      |
+| Channel      Changed          | 2             | x             | See MIDI_CHANNEL_ALT                      |
 +-------------------------------+---------------+---------------+-------------------------------------------+
 | Mode         Default          | Mode 3        | x             |                                           |
 |              Messages         | x             | x             |                                           |
