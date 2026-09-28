@@ -1,6 +1,6 @@
 ```
   [MIDI Controller]                                               Date: 2026-09-28                           
-  Model: PRMC-1 (type-8)          MIDI Implementation Chart       Version: 0.2.2                             
+  Model: PRMC-1 (type-9)          MIDI Implementation Chart       Version: 0.1.0                             
 +-------------------------------+---------------+---------------+-------------------------------------------+
 | Function...                   | Transmitted   | Recognized    | Remarks                                   |
 +-------------------------------+---------------+---------------+-------------------------------------------+
@@ -23,7 +23,8 @@
 | Pitch Bend                    | x             | x             |                                           |
 +-------------------------------+---------------+---------------+-------------------------------------------+
 | Control                     6 | o             | x             | Data Entry MSB, See FOR_SAM2695           |
-| Change                     74 | o             | x             | Brightness (Cutoff)                       |
+| Change                     71 | o             | x             | Harmonic Content (Resonance)              |
+|                            74 | o             | x             | Brightness (Cutoff)                       |
 |                        98, 99 | o             | x             | NRPN LSB, MSB, See FOR_SAM2695            |
 +-------------------------------+---------------+---------------+-------------------------------------------+
 | Program                       | o             | x             |                                           |

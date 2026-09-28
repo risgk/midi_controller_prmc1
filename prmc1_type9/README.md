@@ -1,14 +1,14 @@
-MIDI Controller PRMC-1 (type-8)
+MIDI Controller PRMC-1 (type-9)
 ===============================
 
-**Version 0.2.2 (2026-09-28)**
+**Version 0.1.0 (2026-09-28)**
 
 MIDI Controller made with PicoRuby/R2P2 by ISGK Instruments (Ryo Ishigaki)
 
 Required Software
 -----------------
 
-- R2P2 PICORUBY 4.0.3 PICO2_W https://github.com/picoruby/picoruby/releases/tag/4.0.3
+- R2P2 PICORUBY 4.0.4 PICO2_W https://github.com/picoruby/picoruby/releases/tag/4.0.4
 - R2P2 Web Terminal https://picoruby.org/terminal
 
 Required Hardware
@@ -57,10 +57,8 @@ Usage
         - Pattern 14, 30: Root + 4th + 7th + 10th scale degrees, Up & Down
         - Pattern 15, 31: Root + 4th + 7th scale degrees, Up
         - Pattern 16, 32: Root + 4th + 7th scale degrees, Up & Down
-- CH6 Knob: Diatonic Transpose, 1 - 8
-    - 1st, 2nd, 3rd, 4th, 5th, 6th, 7th, 8th scale degrees in Major Scale
-    - 1st, 2nd, 3rd, 3rd, 4th, 4th, 5th, 5th scale degrees in Major Pentatonic Scale
-- CH7 Knob: Brightness (Cutoff), 0 - 64 - 127 (-64 - +0 - +63)
+- CH6 Knob: Brightness (Cutoff), 0 - 64 - 127 (-64 - +0 - +63)
+- CH7 Knob: Harmonic Content (Resonance), 0 - 64 - 127 (-64 - +0 - +63)
 - CH8 Knob: BPM, 30 - 120 - 240
     - BPM setting is disabled when MIDI clock is received
     - BPM setting is enabled by turning the knob
@@ -82,5 +80,5 @@ Known Issues
 License
 -------
 
-MIDI Controller PRMC-1 (type-8) by ISGK Instruments (Ryo Ishigaki) is marked with CC0 1.0.
+MIDI Controller PRMC-1 (type-9) by ISGK Instruments (Ryo Ishigaki) is marked with CC0 1.0.
 To view a copy of this license, visit https://creativecommons.org/publicdomain/zero/1.0/
