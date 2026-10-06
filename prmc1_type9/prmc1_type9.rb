@@ -122,26 +122,38 @@ end
 
 class Midi
   # refs https://github.com/FortySevenEffects/arduino_midi_library
+  SYSEX_TIMEOUT_USEC = 100_000
+
   def initialize(uart:)
     @uart = uart
+    @status = nil
+    @running_status = nil
+    @data_bytes = ""
+    @data_length = 0
+    @in_sysex = false
+    @sysex_idle_usec = 0
+    @usec = Time.now.usec
+    @thru_output = ""
+    @pending_output = ""
   end
 
   def send_note_on(note_number, velocity, channel)
-    @uart.write((0x90 + channel - 1).chr + note_number.chr + velocity.chr)
+    send_message((0x90 + channel - 1).chr + note_number.chr + velocity.chr)
   end
 
   def send_note_off(note_number, velocity, channel)
-    @uart.write((0x80 + channel - 1).chr + note_number.chr + velocity.chr)
+    send_message((0x80 + channel - 1).chr + note_number.chr + velocity.chr)
   end
 
   def send_control_change(control_number, control_value, channel)
-    @uart.write((0xB0 + channel - 1).chr + control_number.chr + control_value.chr)
+    send_message((0xB0 + channel - 1).chr + control_number.chr + control_value.chr)
   end
 
   def send_program_change(program_number, channel)
-    @uart.write((0xC0 + channel - 1).chr + program_number.chr)
+    send_message((0xC0 + channel - 1).chr + program_number.chr)
   end
 
+  # System Real-Time messages may be sent at any time (even during SysEx)
   def send_clock
     @uart.write(0xF8.chr)
   end
@@ -156,6 +168,112 @@ class Midi
 
   def receive_byte
     @uart.read(1)&.getbyte(0)
+  end
+
+  # Receives all available bytes and forwards them to MIDI OUT (MIDI Thru with merge)
+  # Clock, Start, Continue, and Stop are not forwarded but yielded to the block
+  def receive_and_forward
+    usec = Time.now.usec
+    elapsed_usec = (usec - @usec + 1_000_000) % 1_000_000
+    @usec = usec
+
+    while (byte = receive_byte)
+      if byte >= 0xF8
+        if byte == 0xF8 || byte == 0xFA || byte == 0xFB || byte == 0xFC
+          flush_thru_output
+          yield byte
+        elsif byte != 0xF9 && byte != 0xFD
+          @thru_output << byte.chr
+        end
+      elsif @in_sysex
+        if byte < 0x80
+          @thru_output << byte.chr
+          @sysex_idle_usec = 0
+        else
+          # SysEx is terminated by EOX (0xF7) or any other status byte
+          end_sysex
+          receive_message_byte(byte) if byte != 0xF7
+        end
+      else
+        receive_message_byte(byte)
+      end
+    end
+
+    if @in_sysex
+      @sysex_idle_usec += elapsed_usec
+      end_sysex if @sysex_idle_usec >= SYSEX_TIMEOUT_USEC
+    end
+
+    flush_thru_output
+  end
+
+  # private
+
+  # Channel messages are not inserted into an incoming SysEx (they are sent after the SysEx)
+  def send_message(message)
+    if @in_sysex
+      @pending_output << message
+    else
+      @uart.write(message)
+    end
+  end
+
+  def receive_message_byte(byte)
+    if byte >= 0x80
+      @data_bytes = ""
+
+      if byte < 0xF0
+        @running_status = byte
+        @data_length = (byte >= 0xC0 && byte <= 0xDF) ? 1 : 2
+      else
+        @running_status = nil
+
+        case byte
+        when 0xF0
+          @in_sysex = true
+          @sysex_idle_usec = 0
+          @thru_output << byte.chr
+        when 0xF1, 0xF3
+          @status = byte
+          @data_length = 1
+          return
+        when 0xF2
+          @status = byte
+          @data_length = 2
+          return
+        when 0xF6
+          @thru_output << byte.chr
+        end
+
+        @status = nil
+        return
+      end
+
+      @status = byte
+    elsif !@status.nil?
+      @data_bytes << byte.chr
+
+      if @data_bytes.length == @data_length
+        @thru_output << @status.chr + @data_bytes
+        @data_bytes = ""
+        # keep the status for running status (channel messages only)
+        @status = @running_status
+      end
+    end
+  end
+
+  def end_sysex
+    @thru_output << 0xF7.chr
+    @in_sysex = false
+    flush_thru_output
+    @uart.write(@pending_output) if @pending_output.length > 0
+    @pending_output = ""
+  end
+
+  def flush_thru_output
+    return if @thru_output.length == 0
+    @uart.write(@thru_output)
+    @thru_output = ""
   end
 end
 
@@ -211,15 +329,16 @@ class Prmc1Core
   end
 
   def process_sequencer
-    byte = @midi.receive_byte
-    case byte
-    when 0xFA
-      change_parameter(8, 1) if @send_recv_start_stop
-    when 0xFC
-      change_parameter(8, 0) if @send_recv_start_stop
-    when 0xF8
-      @synced_to_ext_clock = true
-      on_midi_clock
+    @midi.receive_and_forward do |byte|
+      case byte
+      when 0xFA
+        change_parameter(8, 1) if @send_recv_start_stop
+      when 0xFC
+        change_parameter(8, 0) if @send_recv_start_stop
+      when 0xF8
+        @synced_to_ext_clock = true
+        on_midi_clock
+      end
     end
 
     return if @synced_to_ext_clock
