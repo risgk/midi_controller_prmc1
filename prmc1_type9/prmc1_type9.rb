@@ -177,6 +177,7 @@ class Midi
     usec = Time.now.usec
     elapsed_usec = (usec - @usec + 1_000_000) % 1_000_000
     @usec = usec
+    sysex_data_received = false
 
     while (byte = receive_byte)
       if byte >= 0xF8
@@ -189,7 +190,7 @@ class Midi
       elsif @in_sysex
         if byte < 0x80
           @thru_output << byte.chr
-          @sysex_idle_usec = 0
+          sysex_data_received = true
         else
           # SysEx is terminated by EOX (0xF7) or any other status byte
           end_sysex
@@ -201,8 +202,12 @@ class Midi
     end
 
     if @in_sysex
-      @sysex_idle_usec += elapsed_usec
-      end_sysex if @sysex_idle_usec >= SYSEX_TIMEOUT_USEC
+      if sysex_data_received
+        @sysex_idle_usec = 0
+      else
+        @sysex_idle_usec += elapsed_usec
+        end_sysex if @sysex_idle_usec >= SYSEX_TIMEOUT_USEC
+      end
     end
 
     flush_thru_output
