@@ -48,7 +48,8 @@
 |              : Reset          | x             | x             |                                           |
 +-------------------------------+---------------+---------------+-------------------------------------------+
 | Notes                         | All messages received are sent to MIDI OUT (MIDI Thru with merge),        |
-|                               | except for Clock, Start, Continue, and Stop                               |
+|                               | except for Clock, and except for Start, Continue, and Stop when           |
+|                               | SEND_RECV_START_STOP is true                                              |
 +-------------------------------+---------------------------------------------------------------------------+
   Mode 1: Omni On,  Poly          Mode 2: Omni On,  Mono          o: Yes                                     
   Mode 3: Omni Off, Poly          Mode 4: Omni Off, Mono          x: No                                      

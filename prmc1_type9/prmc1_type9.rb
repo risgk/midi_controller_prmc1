@@ -171,15 +171,16 @@ class Midi
   end
 
   # Receives all available bytes and forwards them to MIDI OUT (MIDI Thru with merge)
-  # Clock, Start, Continue, and Stop are not forwarded but yielded to the block
-  def receive_and_forward
+  # Clock is not forwarded but yielded to the block
+  # Start, Continue, and Stop are forwarded if forward_start_stop is true, otherwise yielded to the block
+  def receive_and_forward(forward_start_stop)
     usec = Time.now.usec
     elapsed_usec = (usec - @usec + 1_000_000) % 1_000_000
     @usec = usec
 
     while (byte = receive_byte)
       if byte >= 0xF8
-        if byte == 0xF8 || byte == 0xFA || byte == 0xFB || byte == 0xFC
+        if byte == 0xF8 || (!forward_start_stop && (byte == 0xFA || byte == 0xFB || byte == 0xFC))
           flush_thru_output
           yield byte
         elsif byte != 0xF9 && byte != 0xFD
@@ -329,12 +330,12 @@ class Prmc1Core
   end
 
   def process_sequencer
-    @midi.receive_and_forward do |byte|
+    @midi.receive_and_forward(!@send_recv_start_stop) do |byte|
       case byte
       when 0xFA
-        change_parameter(8, 1) if @send_recv_start_stop
+        change_parameter(8, 1)
       when 0xFC
-        change_parameter(8, 0) if @send_recv_start_stop
+        change_parameter(8, 0)
       when 0xF8
         @synced_to_ext_clock = true
         on_midi_clock
