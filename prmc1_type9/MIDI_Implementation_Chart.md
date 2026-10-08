@@ -1,6 +1,6 @@
 ```
-  [MIDI Controller]                                               Date: 2026-09-28                           
-  Model: PRMC-1 (type-9)          MIDI Implementation Chart       Version: 0.1.0                             
+  [MIDI Controller]                                               Date: 2026-10-06                           
+  Model: PRMC-1 (type-9)          MIDI Implementation Chart       Version: 0.2.0                             
 +-------------------------------+---------------+---------------+-------------------------------------------+
 | Function...                   | Transmitted   | Recognized    | Remarks                                   |
 +-------------------------------+---------------+---------------+-------------------------------------------+
@@ -47,7 +47,9 @@
 |              : Active Sense   | x             | x             |                                           |
 |              : Reset          | x             | x             |                                           |
 +-------------------------------+---------------+---------------+-------------------------------------------+
-| Notes                         |                                                                           |
+| Notes                         | All messages received are sent to MIDI OUT (MIDI Thru with merge),        |
+|                               | except for Clock, and except for Start, Continue, and Stop when           |
+|                               | SEND_RECV_START_STOP is true                                              |
 +-------------------------------+---------------------------------------------------------------------------+
   Mode 1: Omni On,  Poly          Mode 2: Omni On,  Mono          o: Yes                                     
   Mode 3: Omni Off, Poly          Mode 4: Omni Off, Mono          x: No                                      
