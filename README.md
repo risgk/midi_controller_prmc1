@@ -8,7 +8,7 @@ https://github.com/risgk/midi_controller_prmc1
 PRMC-1 (type-9)
 ---------------
 
-- Based on PRMC-1 (type-8), with the CH6 and CH7 Knobs for Brightness (Cutoff) and Harmonic Content (Resonance)
+- Based on PRMC-1 (type-8), with the CH6 and CH7 Knobs for Brightness (Cutoff) and Harmonic Content (Resonance), and MIDI Thru (merge)
 - Required Software: R2P2 PICORUBY 4.0.4 PICO2_W, R2P2 Web Terminal
 - Required Hardware: Raspberry Pi Pico 2, Grove Shield for Pi Pico, M5Stack Unit 8Angle, M5Stack Unit ByteSwitch, M5Stack Unit Dual Button, and M5Stack Unit MIDI
 
