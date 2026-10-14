@@ -12,6 +12,34 @@ NOTE_OFF_VELOCITY = 64
 LED_ON_VALUE = 1
 FOR_SAM2695 = true
 
+# Retries I2C transfers until they succeed (IOError such as timeout may occur)
+class RetryingI2C
+  def initialize(i2c:)
+    @i2c = i2c
+  end
+
+  def write_register(addr, reg)
+    @i2c.write(addr, reg)
+  rescue IOError => e
+    p e
+    retry
+  end
+
+  def write_register_value(addr, reg, value)
+    @i2c.write(addr, reg, value)
+  rescue IOError => e
+    p e
+    retry
+  end
+
+  def read_byte(addr)
+    @i2c.read(addr, 1).getbyte(0)
+  rescue IOError => e
+    p e
+    retry
+  end
+end
+
 class M5UnitAngle8
   # refs https://github.com/m5stack/M5Unit-8Angle
   ANGLE8_I2C_ADDR            = 0x43
@@ -24,52 +52,31 @@ class M5UnitAngle8
   end
 
   def prepare_to_get_analog_input(ch)
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_ANALOG_INPUT_8B_REG + ch)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register(ANGLE8_I2C_ADDR, ANGLE8_ANALOG_INPUT_8B_REG + ch)
   end
 
   def get_analog_input
-    @i2c.read(ANGLE8_I2C_ADDR, 1).getbyte(0)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.read_byte(ANGLE8_I2C_ADDR)
   end
 
   def prepare_to_get_digital_input
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_DIGITAL_INPUT_REG)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register(ANGLE8_I2C_ADDR, ANGLE8_DIGITAL_INPUT_REG)
   end
 
   def get_digital_input
-    @i2c.read(ANGLE8_I2C_ADDR, 1).getbyte(0)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.read_byte(ANGLE8_I2C_ADDR)
   end
 
   def set_red_led(ch, value)
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 0, value)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register_value(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 0, value)
   end
 
   def set_green_led(ch, value)
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 1, value)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register_value(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 1, value)
   end
 
   def set_blue_led(ch, value)
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 2, value)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register_value(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 2, value)
   end
 end
 
@@ -99,24 +106,15 @@ class M5UnitByteSwitch
   end
 
   def prepare_to_get_switch_status
-    @i2c.write(BYTE_SWITCH_I2C_ADDR, UNIT_BYTE_STATUS_REG)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register(BYTE_SWITCH_I2C_ADDR, UNIT_BYTE_STATUS_REG)
   end
 
   def get_switch_status
-    @i2c.read(BYTE_SWITCH_I2C_ADDR, 1).getbyte(0)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.read_byte(BYTE_SWITCH_I2C_ADDR)
   end
 
   def set_led(ch, value)
-    @i2c.write(BYTE_SWITCH_I2C_ADDR, UNIT_BYTE_RGB233_REG + 7 - ch, (value > 0) ? 0x80 : 0x00)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register_value(BYTE_SWITCH_I2C_ADDR, UNIT_BYTE_RGB233_REG + 7 - ch, (value > 0) ? 0x80 : 0x00)
   end
 end
 
@@ -581,7 +579,7 @@ class Prmc1Core
 end
 
 # setup
-i2c1 = I2C.new(unit: :RP2040_I2C1, frequency: 400_000, sda_pin: 6, scl_pin: 7, timeout: 2)
+i2c1 = RetryingI2C.new(i2c: I2C.new(unit: :RP2040_I2C1, frequency: 400_000, sda_pin: 6, scl_pin: 7, timeout: 2))
 angle8 = M5UnitAngle8.new(i2c: i2c1)
 dual_button = M5UnitDualButton.new(gpio_blue_button: 18, gpio_red_button: 19)
 byte_switch = M5UnitByteSwitch.new(i2c: i2c1)
