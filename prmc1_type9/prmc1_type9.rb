@@ -528,29 +528,41 @@ class Prmc1Core
       set_step_status(@step + 1)
     end
 
+    clocks_per_sub_step = CLOCKS_PER_STEP / @step_division
+
     # Note Off is processed before Note On, so that the new note is not stopped
     # when both occur at the same clock (GATE_TIME = 6)
-    if @clock % (CLOCKS_PER_STEP / @step_division) ==
-       CLOCKS_PER_STEP * GATE_TIME / 6 / @step_division % (CLOCKS_PER_STEP / @step_division)
+    if @clock % clocks_per_sub_step == clocks_per_sub_step * GATE_TIME / 6 % clocks_per_sub_step
       @midi.send_note_off(@playing_note, NOTE_OFF_VELOCITY, @midi_channel) if !@playing_note.nil?
     end
 
-    if @clock % (CLOCKS_PER_STEP / @step_division) == 0
-      root = @root_degrees[@step]
-      root = PENTATONIC_ROOT_DEGREES[root] if @scale_is_pentatonic
-      sub_step = @clock / (CLOCKS_PER_STEP / @step_division)
+    if @clock % clocks_per_sub_step == 0
+      sub_step = @clock / clocks_per_sub_step
       set_sub_step_status((sub_step & 0x07) + 1)
-      arpeggio_intervals = @arpeggio_intervals
-      arpeggio_intervals = @alternative_arpeggio_intervals if @alternative_patterns[@step]
-      interval = arpeggio_intervals[sub_step % arpeggio_intervals.length]
-      @playing_note = nil
-      scale_notes = SCALE_NOTES
-      scale_notes = SCALE_NOTES_PENTATONIC if @scale_is_pentatonic
-      @playing_note = scale_notes[root + interval - 1] + @transpose if
-                      !root.nil? && !interval.nil? && ((1 << (sub_step % 8)) & @sub_steps_of_on_bits) > 0
-      @playing_note = 127 if !@playing_note.nil? && @playing_note > 127
+      @playing_note = note_of_sub_step(sub_step)
       @midi.send_note_on(@playing_note, NOTE_ON_VELOCITY, @midi_channel) if !@playing_note.nil?
     end
+  end
+
+  # returns nil if no note is played
+  def note_of_sub_step(sub_step)
+    return nil if ((1 << (sub_step % 8)) & @sub_steps_of_on_bits) == 0
+    root = @root_degrees[@step]
+    return nil if root.nil?
+
+    arpeggio_intervals = @arpeggio_intervals
+    arpeggio_intervals = @alternative_arpeggio_intervals if @alternative_patterns[@step]
+    interval = arpeggio_intervals[sub_step % arpeggio_intervals.length]
+
+    if @scale_is_pentatonic
+      note = SCALE_NOTES_PENTATONIC[PENTATONIC_ROOT_DEGREES[root] + interval - 1]
+    else
+      note = SCALE_NOTES[root + interval - 1]
+    end
+
+    note += @transpose
+    note = 127 if note > 127
+    note
   end
 
   def set_step_status(value)
