@@ -308,6 +308,16 @@ class Prmc1Core
   # root degree (1 - 16) in major scale -> root degree in major pentatonic scale
   PENTATONIC_ROOT_DEGREES = [nil, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 11, 11, 12]
   ONE_HOT_BITS = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
+  # arpeggio intervals (scale degrees) for every two arpeggio patterns (1 - 2, 3 - 4, ..., 15 - 16)
+  # they are repeated during a step
+  ARPEGGIO_INTERVALS_UP = [
+    [1, 3, 5, 7], [1, 3, 5], [1, 5, 7, 10], [1, 5, 10],  # major scale
+    [1, 3, 5, 7], [1, 3, 5], [1, 4, 7, 10], [1, 4, 7]    # major pentatonic scale
+  ]
+  ARPEGGIO_INTERVALS_UP_AND_DOWN = [
+    [1, 3, 5, 7, 5, 3], [1, 3, 5, 3], [1, 5, 7, 10, 7, 5], [1, 5, 10, 5],  # major scale
+    [1, 3, 5, 7, 5, 3], [1, 3, 5, 3], [1, 4, 7, 10, 7, 4], [1, 4, 7, 4]    # major pentatonic scale
+  ]
   TRANSPOSE_STATUS_BITS = [0x01, 0x03, 0x02, 0x06, 0x04, 0x08, 0x18, 0x10, 0x30, 0x20, 0x60, 0x40]
 
   def initialize(midi:, midi_channel:, send_recv_start_stop:)
@@ -319,10 +329,10 @@ class Prmc1Core
     @root_degrees = []  # a different object from the candidate (updated at each step)
     @alternative_patterns_candidate = []
     @alternative_patterns = []
-    @arpeggio_intervals_candidate = []
-    @arpeggio_intervals = []
-    @alternative_arpeggio_intervals_candidate = []
-    @alternative_arpeggio_intervals = []
+    @arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP[0]
+    @arpeggio_intervals = @arpeggio_intervals_candidate
+    @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP_AND_DOWN[0]
+    @alternative_arpeggio_intervals = @alternative_arpeggio_intervals_candidate
     @step_division_candidate = 8
     @step_division = @step_division_candidate
     @sub_steps_of_on_bits_candidate = 0x00
@@ -377,70 +387,19 @@ class Prmc1Core
     when 4
       arpeggio_pattern = value / 4 + 1
 
-      case (arpeggio_pattern - 1) % 16 + 1
-      when 1
-        @arpeggio_intervals_candidate             = [1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  7,  5,  3,  1,  3,  5,  7,  5,  3,  1,  3,  5,  7]
-      when 2
-        @arpeggio_intervals_candidate             = [1,  3,  5,  7,  5,  3,  1,  3,  5,  7,  5,  3,  1,  3,  5,  7]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7]
-      when 3
-        @arpeggio_intervals_candidate             = [1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3]
-      when 4
-        @arpeggio_intervals_candidate             = [1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1]
-      when 5
-        @arpeggio_intervals_candidate             = [1,  5,  7, 10,  1,  5,  7, 10,  1,  5,  7, 10,  1,  5,  7, 10]
-        @alternative_arpeggio_intervals_candidate = [1,  5,  7, 10,  7,  5,  1,  5,  7, 10,  7,  5,  1,  5,  7, 10]
-      when 6
-        @arpeggio_intervals_candidate             = [1,  5,  7, 10,  7,  5,  1,  5,  7, 10,  7,  5,  1,  5,  7, 10]
-        @alternative_arpeggio_intervals_candidate = [1,  5,  7, 10,  1,  5,  7, 10,  1,  5,  7, 10,  1,  5,  7, 10]
-      when 7
-        @arpeggio_intervals_candidate             = [1,  5, 10,  1,  5, 10,  1,  5, 10,  1,  5, 10,  1,  5, 10,  1]
-        @alternative_arpeggio_intervals_candidate = [1,  5, 10,  5,  1,  5, 10,  5,  1,  5, 10,  5,  1,  5, 10,  5]
-      when 8
-        @arpeggio_intervals_candidate             = [1,  5, 10,  5,  1,  5, 10,  5,  1,  5, 10,  5,  1,  5, 10,  5]
-        @alternative_arpeggio_intervals_candidate = [1,  5, 10,  1,  5, 10,  1,  5, 10,  1,  5, 10,  1,  5, 10,  1]
-      when 9
-        @arpeggio_intervals_candidate             = [1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  7,  5,  3,  1,  3,  5,  7,  5,  3,  1,  3,  5,  7]
-      when 10
-        @arpeggio_intervals_candidate             = [1,  3,  5,  7,  5,  3,  1,  3,  5,  7,  5,  3,  1,  3,  5,  7]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7]
-      when 11
-        @arpeggio_intervals_candidate             = [1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3]
-      when 12
-        @arpeggio_intervals_candidate             = [1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1]
-      when 13
-        @arpeggio_intervals_candidate             = [1,  4,  7, 10,  1,  4,  7, 10,  1,  4,  7, 10,  1,  4,  7, 10]
-        @alternative_arpeggio_intervals_candidate = [1,  4,  7, 10,  7,  4,  1,  4,  7, 10,  7,  4,  1,  4,  7, 10]
-      when 14
-        @arpeggio_intervals_candidate             = [1,  4,  7, 10,  7,  4,  1,  4,  7, 10,  7,  4,  1,  4,  7, 10]
-        @alternative_arpeggio_intervals_candidate = [1,  4,  7, 10,  1,  4,  7, 10,  1,  4,  7, 10,  1,  4,  7, 10]
-      when 15
-        @arpeggio_intervals_candidate             = [1,  4,  7,  1,  4,  7,  1,  4,  7,  1,  4,  7,  1,  4,  7,  1]
-        @alternative_arpeggio_intervals_candidate = [1,  4,  7,  4,  1,  4,  7,  4,  1,  4,  7,  4,  1,  4,  7,  4]
-      when 16
-        @arpeggio_intervals_candidate             = [1,  4,  7,  4,  1,  4,  7,  4,  1,  4,  7,  4,  1,  4,  7,  4]
-        @alternative_arpeggio_intervals_candidate = [1,  4,  7,  1,  4,  7,  1,  4,  7,  1,  4,  7,  1,  4,  7,  1]
+      pattern_index = (arpeggio_pattern - 1) % 16
+
+      # odd patterns: Up (alternative: Up & Down), even patterns: Up & Down (alternative: Up)
+      if pattern_index % 2 == 0
+        @arpeggio_intervals_candidate             = ARPEGGIO_INTERVALS_UP[pattern_index / 2]
+        @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP_AND_DOWN[pattern_index / 2]
+      else
+        @arpeggio_intervals_candidate             = ARPEGGIO_INTERVALS_UP_AND_DOWN[pattern_index / 2]
+        @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP[pattern_index / 2]
       end
 
-      case (arpeggio_pattern - 1) % 16 + 1
-      when 1..8
-        @scale_is_pentatonic_candidate = false
-      when 9..16
-        @scale_is_pentatonic_candidate = true
-      end
-
-      case arpeggio_pattern
-      when 1..16
-        @step_division_candidate = 8
-      when 17..32
-        @step_division_candidate = 16
-      end
+      @scale_is_pentatonic_candidate = (pattern_index >= 8)
+      @step_division_candidate = (arpeggio_pattern <= 16) ? 8 : 16
 
       set_parameter_status((arpeggio_pattern - 1) % 8 + 1)
     when 5
@@ -519,8 +478,8 @@ class Prmc1Core
       @clock = 0
       @root_degrees_candidate.each_with_index {|item, index| @root_degrees[index] = item }
       @alternative_patterns_candidate.each_with_index {|item, index| @alternative_patterns[index] = item }
-      @arpeggio_intervals_candidate.each_with_index {|item, index| @arpeggio_intervals[index] = item }
-      @alternative_arpeggio_intervals_candidate.each_with_index {|item, index| @alternative_arpeggio_intervals[index] = item }
+      @arpeggio_intervals = @arpeggio_intervals_candidate
+      @alternative_arpeggio_intervals = @alternative_arpeggio_intervals_candidate
       @step_division = @step_division_candidate
       @sub_steps_of_on_bits = @sub_steps_of_on_bits_candidate
       @scale_is_pentatonic = @scale_is_pentatonic_candidate
