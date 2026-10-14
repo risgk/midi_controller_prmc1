@@ -289,6 +289,18 @@ class Midi
 end
 
 class Prmc1Core
+  # keys of change_parameter
+  KEY_ROOT_DEGREE_1         = 0
+  KEY_ROOT_DEGREE_4         = 3
+  KEY_ARPEGGIO_PATTERN      = 4
+  KEY_FILTER_CUTOFF         = 5
+  KEY_FILTER_RESONANCE      = 6
+  KEY_BPM                   = 7
+  KEY_PLAYING               = 8
+  KEY_TRANSPOSE_DOWN        = 9
+  KEY_TRANSPOSE_UP          = 10
+  KEY_SUB_STEPS_OF_ON_BITS  = 11
+
   NUMBER_OF_STEPS = 4
   CLOCKS_PER_STEP = 96
   SCALE_NOTES = [nil,  48,  50,  52,  53,  55,  57,  59,
@@ -357,9 +369,9 @@ class Prmc1Core
     @midi.receive_and_forward(!@send_recv_start_stop) do |byte|
       case byte
       when 0xFA
-        change_parameter(8, 1)
+        start
       when 0xFC
-        change_parameter(8, 0)
+        stop
       when 0xF8
         @synced_to_ext_clock = true
         on_midi_clock
@@ -380,77 +392,31 @@ class Prmc1Core
 
   def change_parameter(key, value)
     case key
-    when 0..3
-      @root_degrees_candidate[key] = ((value / 4) % 16) + 1
-      @alternative_patterns_candidate[key] = ((value / 4) / 16 == 1) ? true : false
-      set_parameter_status_with_flag((@root_degrees_candidate[key] - 1) % 7 + 1, @alternative_patterns_candidate[key])
-    when 4
-      arpeggio_pattern = value / 4 + 1
-
-      pattern_index = (arpeggio_pattern - 1) % 16
-
-      # odd patterns: Up (alternative: Up & Down), even patterns: Up & Down (alternative: Up)
-      if pattern_index % 2 == 0
-        @arpeggio_intervals_candidate             = ARPEGGIO_INTERVALS_UP[pattern_index / 2]
-        @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP_AND_DOWN[pattern_index / 2]
-      else
-        @arpeggio_intervals_candidate             = ARPEGGIO_INTERVALS_UP_AND_DOWN[pattern_index / 2]
-        @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP[pattern_index / 2]
-      end
-
-      @scale_is_pentatonic_candidate = (pattern_index >= 8)
-      @step_division_candidate = (arpeggio_pattern <= 16) ? 8 : 16
-
-      set_parameter_status((arpeggio_pattern - 1) % 8 + 1)
-    when 5
-      # filter cutoff
-      @midi.send_control_change(0x4A, value, @midi_channel)
-
-      if FOR_SAM2695
-        @midi.send_nrpn(0x01, 0x20, value, @midi_channel)
-      end
-
-      set_parameter_status_with_center_mark(value)
-    when 6
-      # filter resonance
-      @midi.send_control_change(0x47, value, @midi_channel)
-
-      if FOR_SAM2695
-        @midi.send_nrpn(0x01, 0x21, value, @midi_channel)
-      end
-
-      set_parameter_status_with_center_mark(value)
-    when 7
-      @synced_to_ext_clock = false
-      @bpm = value * 2 - 8
-      @bpm = 240 if @bpm > 240
-      @bpm = 30 if @bpm < 30
-      set_parameter_status_with_center_mark(value)
-    when 8
+    when KEY_ROOT_DEGREE_1..KEY_ROOT_DEGREE_4
+      change_root_degree(key - KEY_ROOT_DEGREE_1, value)
+    when KEY_ARPEGGIO_PATTERN
+      change_arpeggio_pattern(value)
+    when KEY_FILTER_CUTOFF
+      change_filter_parameter(0x4A, 0x20, value)
+    when KEY_FILTER_RESONANCE
+      change_filter_parameter(0x47, 0x21, value)
+    when KEY_BPM
+      change_bpm(value)
+    when KEY_PLAYING
       if value > 0
-        @midi.send_start if @send_recv_start_stop
-        @playing = true
-        @playing_note = nil
-        @step = NUMBER_OF_STEPS - 1
-        @clock = CLOCKS_PER_STEP - 1
+        start
       else
-        @midi.send_stop if @send_recv_start_stop
-        @playing = false
-        @midi.send_note_off(@playing_note, NOTE_OFF_VELOCITY, @midi_channel) if !@playing_note.nil?
-        set_step_status(0)
-        set_sub_step_status(0)
+        stop
       end
-    when 9
+    when KEY_TRANSPOSE_DOWN
       @transpose_candidate -= 1 if @transpose_candidate > -24 && value == 1
       set_parameter_status_for_transpose(@transpose_candidate)
-    when 10
+    when KEY_TRANSPOSE_UP
       @transpose_candidate += 1 if @transpose_candidate < +24 && value == 1
       set_parameter_status_for_transpose(@transpose_candidate)
-    when 11
-      reversed_value = ((value & 0xF0) >> 4) | ((value & 0x0F) << 4)
-      reversed_value = ((reversed_value & 0xCC) >> 2) | ((reversed_value & 0x33) << 2)
-      reversed_value = ((reversed_value & 0xAA) >> 1) | ((reversed_value & 0x55) << 1)
-      @sub_steps_of_on_bits_candidate = reversed_value & 0xFF
+    when KEY_SUB_STEPS_OF_ON_BITS
+      # bit 7 of the Byte Switch is Sub-Step 1, so reverse the bits
+      @sub_steps_of_on_bits_candidate = reverse_bits(value)
       @parameter_status_bits = @sub_steps_of_on_bits_candidate
     end
   end
@@ -468,6 +434,68 @@ class Prmc1Core
   end
 
   # private
+
+  def change_root_degree(step, value)
+    @root_degrees_candidate[step] = ((value / 4) % 16) + 1
+    @alternative_patterns_candidate[step] = (value >= 64)
+    set_parameter_status_with_flag((@root_degrees_candidate[step] - 1) % 7 + 1, @alternative_patterns_candidate[step])
+  end
+
+  def change_arpeggio_pattern(value)
+    arpeggio_pattern = value / 4 + 1
+    pattern_index = (arpeggio_pattern - 1) % 16
+
+    # odd patterns: Up (alternative: Up & Down), even patterns: Up & Down (alternative: Up)
+    if pattern_index % 2 == 0
+      @arpeggio_intervals_candidate             = ARPEGGIO_INTERVALS_UP[pattern_index / 2]
+      @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP_AND_DOWN[pattern_index / 2]
+    else
+      @arpeggio_intervals_candidate             = ARPEGGIO_INTERVALS_UP_AND_DOWN[pattern_index / 2]
+      @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP[pattern_index / 2]
+    end
+
+    @scale_is_pentatonic_candidate = (pattern_index >= 8)
+    @step_division_candidate = (arpeggio_pattern <= 16) ? 8 : 16
+
+    set_parameter_status((arpeggio_pattern - 1) % 8 + 1)
+  end
+
+  def change_filter_parameter(control_number, sam2695_nrpn_lsb, value)
+    @midi.send_control_change(control_number, value, @midi_channel)
+    @midi.send_nrpn(0x01, sam2695_nrpn_lsb, value, @midi_channel) if FOR_SAM2695
+    set_parameter_status_with_center_mark(value)
+  end
+
+  def change_bpm(value)
+    @synced_to_ext_clock = false
+    @bpm = value * 2 - 8
+    @bpm = 240 if @bpm > 240
+    @bpm = 30 if @bpm < 30
+    set_parameter_status_with_center_mark(value)
+  end
+
+  def start
+    @midi.send_start if @send_recv_start_stop
+    @playing = true
+    @playing_note = nil
+    @step = NUMBER_OF_STEPS - 1
+    @clock = CLOCKS_PER_STEP - 1
+  end
+
+  def stop
+    @midi.send_stop if @send_recv_start_stop
+    @playing = false
+    @midi.send_note_off(@playing_note, NOTE_OFF_VELOCITY, @midi_channel) if !@playing_note.nil?
+    set_step_status(0)
+    set_sub_step_status(0)
+  end
+
+  def reverse_bits(value)
+    value = ((value & 0xF0) >> 4) | ((value & 0x0F) << 4)
+    value = ((value & 0xCC) >> 2) | ((value & 0x33) << 2)
+    value = ((value & 0xAA) >> 1) | ((value & 0x55) << 1)
+    value & 0xFF
+  end
 
   def on_midi_clock
     @midi.send_clock
