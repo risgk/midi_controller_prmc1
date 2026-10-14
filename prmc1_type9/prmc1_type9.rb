@@ -525,7 +525,12 @@ class Prmc1Core
       set_step_status(@step + 1)
     end
 
-    playing_note_old = @playing_note
+    # Note Off is processed before Note On, so that the new note is not stopped
+    # when both occur at the same clock (GATE_TIME = 6)
+    if @clock % (CLOCKS_PER_STEP / @step_division) ==
+       CLOCKS_PER_STEP * GATE_TIME / 6 / @step_division % (CLOCKS_PER_STEP / @step_division)
+      @midi.send_note_off(@playing_note, NOTE_OFF_VELOCITY, @midi_channel) if !@playing_note.nil?
+    end
 
     if @clock % (CLOCKS_PER_STEP / @step_division) == 0
       root = @root_degrees[@step]
@@ -542,11 +547,6 @@ class Prmc1Core
                       !root.nil? && !interval.nil? && ((1 << (sub_step % 8)) & @sub_steps_of_on_bits) > 0
       @playing_note = 127 if !@playing_note.nil? && @playing_note > 127
       @midi.send_note_on(@playing_note, NOTE_ON_VELOCITY, @midi_channel) if !@playing_note.nil?
-    end
-
-    if @clock % (CLOCKS_PER_STEP / @step_division) ==
-       CLOCKS_PER_STEP * GATE_TIME / 6 / @step_division % (CLOCKS_PER_STEP / @step_division)
-      @midi.send_note_off(playing_note_old, NOTE_OFF_VELOCITY, @midi_channel) if !@playing_note.nil? 
     end
   end
 
