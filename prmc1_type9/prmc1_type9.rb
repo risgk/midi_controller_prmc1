@@ -13,30 +13,41 @@ LED_ON_VALUE = 1
 FOR_SAM2695 = true
 
 # Retries I2C transfers until they succeed (IOError such as timeout may occur)
+# The sequencer is processed before each transfer (not before each retry) to keep its timing
 class RetryingI2C
-  def initialize(i2c:)
+  def initialize(i2c:, sequencer:)
     @i2c = i2c
+    @sequencer = sequencer
   end
 
   def write_register(addr, reg)
-    @i2c.write(addr, reg)
-  rescue IOError => e
-    p e
-    retry
+    @sequencer.process_sequencer
+    begin
+      @i2c.write(addr, reg)
+    rescue IOError => e
+      p e
+      retry
+    end
   end
 
   def write_register_value(addr, reg, value)
-    @i2c.write(addr, reg, value)
-  rescue IOError => e
-    p e
-    retry
+    @sequencer.process_sequencer
+    begin
+      @i2c.write(addr, reg, value)
+    rescue IOError => e
+      p e
+      retry
+    end
   end
 
   def read_byte(addr)
-    @i2c.read(addr, 1).getbyte(0)
-  rescue IOError => e
-    p e
-    retry
+    @sequencer.process_sequencer
+    begin
+      @i2c.read(addr, 1).getbyte(0)
+    rescue IOError => e
+      p e
+      retry
+    end
   end
 end
 
@@ -569,10 +580,7 @@ class Prmc1Core
 end
 
 # setup
-i2c1 = RetryingI2C.new(i2c: I2C.new(unit: :RP2040_I2C1, frequency: 400_000, sda_pin: 6, scl_pin: 7, timeout: 2))
-angle8 = M5UnitAngle8.new(i2c: i2c1)
 dual_button = M5UnitDualButton.new(gpio_blue_button: 18, gpio_red_button: 19)
-byte_switch = M5UnitByteSwitch.new(i2c: i2c1)
 uart1 = UART.new(unit: :RP2040_UART1, txd_pin: 4, rxd_pin: 5, baudrate: 31_250)
 midi = Midi.new(uart: uart1)
 current_inputs = [nil, nil, nil, nil, nil, nil, nil, nil, 0, 0, 0, 0]
@@ -583,6 +591,10 @@ midi_channel = MIDI_CHANNEL_ALT if current_inputs[10] == 1
 send_recv_start_stop = SEND_RECV_START_STOP
 send_recv_start_stop = !send_recv_start_stop if current_inputs[9] == 1
 prmc1_core = Prmc1Core.new(midi: midi, midi_channel: midi_channel, send_recv_start_stop: send_recv_start_stop)
+i2c1 = RetryingI2C.new(i2c: I2C.new(unit: :RP2040_I2C1, frequency: 400_000, sda_pin: 6, scl_pin: 7, timeout: 2),
+                       sequencer: prmc1_core)
+angle8 = M5UnitAngle8.new(i2c: i2c1)
+byte_switch = M5UnitByteSwitch.new(i2c: i2c1)
 
 current_program = 0
 
@@ -597,16 +609,10 @@ led_builtin = GPIO.new(25, GPIO::OUT)
 led_builtin.write(1)
 
 # loop
+# (the sequencer is processed in each I2C transfer, see RetryingI2C)
 loop do
-  analog_input = 0
-  digital_input = 0
-  blue_button_input = 0
-  red_button_input = 0
-
   [6, 0, 1, 2, 3, 4, 5, 6, 7].each do |ch|
-    prmc1_core.process_sequencer
     angle8.prepare_to_get_analog_input(ch)
-    prmc1_core.process_sequencer
     analog_input = angle8.get_analog_input
 
     if current_inputs[ch].nil? ||
@@ -617,9 +623,7 @@ loop do
     end
   end
 
-  prmc1_core.process_sequencer
   angle8.prepare_to_get_digital_input
-  prmc1_core.process_sequencer
   digital_input = angle8.get_digital_input
 
   if current_inputs[8] != digital_input
@@ -646,9 +650,7 @@ loop do
     end
   end
 
-  prmc1_core.process_sequencer
   byte_switch.prepare_to_get_switch_status
-  prmc1_core.process_sequencer
   switch_status = byte_switch.get_switch_status
 
   if current_inputs[11] != switch_status
@@ -657,21 +659,17 @@ loop do
   end
 
   # workaround for CH1 blue LED flickering issue
-  prmc1_core.process_sequencer
   angle8.set_blue_led(7, 0)
 
   (0..3).each do |ch|
-    prmc1_core.process_sequencer
     angle8.set_blue_led(ch, (prmc1_core.step_status_bits >> ch & 0x01) * LED_ON_VALUE)
   end
 
   (0..7).each do |ch|
-    prmc1_core.process_sequencer
     byte_switch.set_led(ch, prmc1_core.sub_step_status_bits >> ch & 0x01)
   end
 
   (0..7).each do |ch|
-    prmc1_core.process_sequencer
     angle8.set_green_led(ch, (prmc1_core.parameter_status_bits >> ch & 0x01) * LED_ON_VALUE)
   end
 end
