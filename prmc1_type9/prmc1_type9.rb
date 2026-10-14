@@ -12,6 +12,45 @@ NOTE_OFF_VELOCITY = 64
 LED_ON_VALUE = 1
 FOR_SAM2695 = true
 
+# Retries I2C transfers until they succeed (IOError such as timeout may occur)
+# The sequencer is processed before each transfer (not before each retry) to keep its timing
+class RetryingI2C
+  def initialize(i2c:, sequencer:)
+    @i2c = i2c
+    @sequencer = sequencer
+  end
+
+  def write_register(addr, reg)
+    @sequencer.process_sequencer
+    begin
+      @i2c.write(addr, reg)
+    rescue IOError => e
+      p e
+      retry
+    end
+  end
+
+  def write_register_value(addr, reg, value)
+    @sequencer.process_sequencer
+    begin
+      @i2c.write(addr, reg, value)
+    rescue IOError => e
+      p e
+      retry
+    end
+  end
+
+  def read_byte(addr)
+    @sequencer.process_sequencer
+    begin
+      @i2c.read(addr, 1).getbyte(0)
+    rescue IOError => e
+      p e
+      retry
+    end
+  end
+end
+
 class M5UnitAngle8
   # refs https://github.com/m5stack/M5Unit-8Angle
   ANGLE8_I2C_ADDR            = 0x43
@@ -24,52 +63,31 @@ class M5UnitAngle8
   end
 
   def prepare_to_get_analog_input(ch)
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_ANALOG_INPUT_8B_REG + ch)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register(ANGLE8_I2C_ADDR, ANGLE8_ANALOG_INPUT_8B_REG + ch)
   end
 
   def get_analog_input
-    @i2c.read(ANGLE8_I2C_ADDR, 1).getbyte(0)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.read_byte(ANGLE8_I2C_ADDR)
   end
 
   def prepare_to_get_digital_input
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_DIGITAL_INPUT_REG)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register(ANGLE8_I2C_ADDR, ANGLE8_DIGITAL_INPUT_REG)
   end
 
   def get_digital_input
-    @i2c.read(ANGLE8_I2C_ADDR, 1).getbyte(0)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.read_byte(ANGLE8_I2C_ADDR)
   end
 
   def set_red_led(ch, value)
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 0, value)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register_value(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 0, value)
   end
 
   def set_green_led(ch, value)
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 1, value)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register_value(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 1, value)
   end
 
   def set_blue_led(ch, value)
-    @i2c.write(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 2, value)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register_value(ANGLE8_I2C_ADDR, ANGLE8_RGB_24B_REG + ch * 4 + 2, value)
   end
 end
 
@@ -99,24 +117,15 @@ class M5UnitByteSwitch
   end
 
   def prepare_to_get_switch_status
-    @i2c.write(BYTE_SWITCH_I2C_ADDR, UNIT_BYTE_STATUS_REG)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register(BYTE_SWITCH_I2C_ADDR, UNIT_BYTE_STATUS_REG)
   end
 
   def get_switch_status
-    @i2c.read(BYTE_SWITCH_I2C_ADDR, 1).getbyte(0)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.read_byte(BYTE_SWITCH_I2C_ADDR)
   end
 
   def set_led(ch, value)
-    @i2c.write(BYTE_SWITCH_I2C_ADDR, UNIT_BYTE_RGB233_REG + 7 - ch, (value > 0) ? 0x80 : 0x00)
-  rescue IOError => e
-    p e
-    retry
+    @i2c.write_register_value(BYTE_SWITCH_I2C_ADDR, UNIT_BYTE_RGB233_REG + 7 - ch, (value > 0) ? 0x80 : 0x00)
   end
 end
 
@@ -151,6 +160,13 @@ class Midi
 
   def send_program_change(program_number, channel)
     send_message((0xC0 + channel - 1).chr + program_number.chr)
+  end
+
+  # NRPN with Data Entry MSB only
+  def send_nrpn(parameter_number_msb, parameter_number_lsb, value, channel)
+    send_control_change(0x63, parameter_number_msb, channel)
+    send_control_change(0x62, parameter_number_lsb, channel)
+    send_control_change(0x06, value, channel)
   end
 
   # System Real-Time messages may be sent at any time (even during SysEx)
@@ -284,8 +300,50 @@ class Midi
 end
 
 class Prmc1Core
+  # keys of change_parameter
+  KEY_ROOT_DEGREE_1         = 0
+  KEY_ROOT_DEGREE_2         = 1
+  KEY_ROOT_DEGREE_3         = 2
+  KEY_ROOT_DEGREE_4         = 3
+  KEY_ARPEGGIO_PATTERN      = 4
+  KEY_FILTER_CUTOFF         = 5
+  KEY_FILTER_RESONANCE      = 6
+  KEY_BPM                   = 7
+  KEY_PLAYING               = 8
+  KEY_TRANSPOSE_DOWN        = 9
+  KEY_TRANSPOSE_UP          = 10
+  KEY_SUB_STEPS_OF_ON_BITS  = 11
+
   NUMBER_OF_STEPS = 4
   CLOCKS_PER_STEP = 96
+  SCALE_NOTES = [nil,  48,  50,  52,  53,  55,  57,  59,
+                       60,  62,  64,  65,  67,  69,  71,
+                       72,  74,  76,  77,  79,  81,  83,
+                       84,  86,  88,  89,  91,  93,  95,
+                       96,  98, 100, 101, 103, 105, 107,
+                      108, 110, 112, 113, 115, 117, 119,
+                      120, 122, 124, 125, 127]
+  SCALE_NOTES_PENTATONIC = [nil,  48,  50,  52,  55,  57,
+                                  60,  62,  64,  67,  69,
+                                  72,  74,  76,  79,  81,
+                                  84,  86,  88,  91,  93,
+                                  96,  98, 100, 103, 105,
+                                 108, 110, 112, 115, 117,
+                                 120, 122, 124, 127]
+  # root degree (1 - 16) in major scale -> root degree in major pentatonic scale
+  PENTATONIC_ROOT_DEGREES = [nil, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 11, 11, 12]
+  ONE_HOT_BITS = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
+  # arpeggio intervals (scale degrees) for every two arpeggio patterns (1 - 2, 3 - 4, ..., 15 - 16)
+  # they are repeated during a step
+  ARPEGGIO_INTERVALS_UP = [
+    [1, 3, 5, 7], [1, 3, 5], [1, 5, 7, 10], [1, 5, 10],  # major scale
+    [1, 3, 5, 7], [1, 3, 5], [1, 4, 7, 10], [1, 4, 7]    # major pentatonic scale
+  ]
+  ARPEGGIO_INTERVALS_UP_AND_DOWN = [
+    [1, 3, 5, 7, 5, 3], [1, 3, 5, 3], [1, 5, 7, 10, 7, 5], [1, 5, 10, 5],  # major scale
+    [1, 3, 5, 7, 5, 3], [1, 3, 5, 3], [1, 4, 7, 10, 7, 4], [1, 4, 7, 4]    # major pentatonic scale
+  ]
+  TRANSPOSE_STATUS_BITS = [0x01, 0x03, 0x02, 0x06, 0x04, 0x08, 0x18, 0x10, 0x30, 0x20, 0x60, 0x40]
 
   def initialize(midi:, midi_channel:, send_recv_start_stop:)
     @midi = midi
@@ -293,33 +351,19 @@ class Prmc1Core
     @send_recv_start_stop = send_recv_start_stop
     @bpm = 120
     @root_degrees_candidate = []
-    @root_degrees = @root_degrees_candidate
+    @root_degrees = []  # a different object from the candidate (updated at each step)
     @alternative_patterns_candidate = []
-    @alternative_patterns = @alternative_patterns_candidate
-    @arpeggio_intervals_candidate = []
+    @alternative_patterns = []
+    @arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP[0]
     @arpeggio_intervals = @arpeggio_intervals_candidate
-    @alternative_arpeggio_intervals_candidate = []
+    @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP_AND_DOWN[0]
     @alternative_arpeggio_intervals = @alternative_arpeggio_intervals_candidate
     @step_division_candidate = 8
     @step_division = @step_division_candidate
     @sub_steps_of_on_bits_candidate = 0x00
-    @sub_steps_of_on_bits = @sub_steps_of_on_bits
+    @sub_steps_of_on_bits = @sub_steps_of_on_bits_candidate
     @scale_is_pentatonic_candidate = false
     @scale_is_pentatonic = @scale_is_pentatonic_candidate
-    @scale_notes = [nil,  48,  50,  52,  53,  55,  57,  59,
-                          60,  62,  64,  65,  67,  69,  71,
-                          72,  74,  76,  77,  79,  81,  83,
-                          84,  86,  88,  89,  91,  93,  95,
-                          96,  98, 100, 101, 103, 105, 107,
-                         108, 110, 112, 113, 115, 117, 119,
-                         120, 122, 124, 125, 127]
-    @scale_notes_pentatonic = [nil,  48,  50,  52,  55,  57,
-                                     60,  62,  64,  67,  69,
-                                     72,  74,  76,  79,  81,
-                                     84,  86,  88,  91,  93,
-                                     96,  98, 100, 103, 105,
-                                    108, 110, 112, 115, 117,
-                                    120, 122, 124, 127]
     @playing = false
     @playing_note = nil
     @step = 0
@@ -338,9 +382,9 @@ class Prmc1Core
     @midi.receive_and_forward(!@send_recv_start_stop) do |byte|
       case byte
       when 0xFA
-        change_parameter(8, 1)
+        start
       when 0xFC
-        change_parameter(8, 0)
+        stop
       when 0xF8
         @synced_to_ext_clock = true
         on_midi_clock
@@ -361,132 +405,31 @@ class Prmc1Core
 
   def change_parameter(key, value)
     case key
-    when 0..3
-      @root_degrees_candidate[key] = ((value / 4) % 16) + 1
-      @alternative_patterns_candidate[key] = ((value / 4) / 16 == 1) ? true : false
-      set_parameter_status_with_flag((@root_degrees_candidate[key] - 1) % 7 + 1, @alternative_patterns_candidate[key])
-    when 4
-      arpeggio_pattern = value / 4 + 1
-
-      case (arpeggio_pattern - 1) % 16 + 1
-      when 1
-        @arpeggio_intervals_candidate             = [1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  7,  5,  3,  1,  3,  5,  7,  5,  3,  1,  3,  5,  7]
-      when 2
-        @arpeggio_intervals_candidate             = [1,  3,  5,  7,  5,  3,  1,  3,  5,  7,  5,  3,  1,  3,  5,  7]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7]
-      when 3
-        @arpeggio_intervals_candidate             = [1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3]
-      when 4
-        @arpeggio_intervals_candidate             = [1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1]
-      when 5
-        @arpeggio_intervals_candidate             = [1,  5,  7, 10,  1,  5,  7, 10,  1,  5,  7, 10,  1,  5,  7, 10]
-        @alternative_arpeggio_intervals_candidate = [1,  5,  7, 10,  7,  5,  1,  5,  7, 10,  7,  5,  1,  5,  7, 10]
-      when 6
-        @arpeggio_intervals_candidate             = [1,  5,  7, 10,  7,  5,  1,  5,  7, 10,  7,  5,  1,  5,  7, 10]
-        @alternative_arpeggio_intervals_candidate = [1,  5,  7, 10,  1,  5,  7, 10,  1,  5,  7, 10,  1,  5,  7, 10]
-      when 7
-        @arpeggio_intervals_candidate             = [1,  5, 10,  1,  5, 10,  1,  5, 10,  1,  5, 10,  1,  5, 10,  1]
-        @alternative_arpeggio_intervals_candidate = [1,  5, 10,  5,  1,  5, 10,  5,  1,  5, 10,  5,  1,  5, 10,  5]
-      when 8
-        @arpeggio_intervals_candidate             = [1,  5, 10,  5,  1,  5, 10,  5,  1,  5, 10,  5,  1,  5, 10,  5]
-        @alternative_arpeggio_intervals_candidate = [1,  5, 10,  1,  5, 10,  1,  5, 10,  1,  5, 10,  1,  5, 10,  1]
-      when 9
-        @arpeggio_intervals_candidate             = [1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  7,  5,  3,  1,  3,  5,  7,  5,  3,  1,  3,  5,  7]
-      when 10
-        @arpeggio_intervals_candidate             = [1,  3,  5,  7,  5,  3,  1,  3,  5,  7,  5,  3,  1,  3,  5,  7]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7,  1,  3,  5,  7]
-      when 11
-        @arpeggio_intervals_candidate             = [1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3]
-      when 12
-        @arpeggio_intervals_candidate             = [1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3,  1,  3,  5,  3]
-        @alternative_arpeggio_intervals_candidate = [1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1,  3,  5,  1]
-      when 13
-        @arpeggio_intervals_candidate             = [1,  4,  7, 10,  1,  4,  7, 10,  1,  4,  7, 10,  1,  4,  7, 10]
-        @alternative_arpeggio_intervals_candidate = [1,  4,  7, 10,  7,  4,  1,  4,  7, 10,  7,  4,  1,  4,  7, 10]
-      when 14
-        @arpeggio_intervals_candidate             = [1,  4,  7, 10,  7,  4,  1,  4,  7, 10,  7,  4,  1,  4,  7, 10]
-        @alternative_arpeggio_intervals_candidate = [1,  4,  7, 10,  1,  4,  7, 10,  1,  4,  7, 10,  1,  4,  7, 10]
-      when 15
-        @arpeggio_intervals_candidate             = [1,  4,  7,  1,  4,  7,  1,  4,  7,  1,  4,  7,  1,  4,  7,  1]
-        @alternative_arpeggio_intervals_candidate = [1,  4,  7,  4,  1,  4,  7,  4,  1,  4,  7,  4,  1,  4,  7,  4]
-      when 16
-        @arpeggio_intervals_candidate             = [1,  4,  7,  4,  1,  4,  7,  4,  1,  4,  7,  4,  1,  4,  7,  4]
-        @alternative_arpeggio_intervals_candidate = [1,  4,  7,  1,  4,  7,  1,  4,  7,  1,  4,  7,  1,  4,  7,  1]
-      end
-
-      case (arpeggio_pattern - 1) % 16 + 1
-      when 1..8
-        @scale_is_pentatonic_candidate = false
-      when 9..16
-        @scale_is_pentatonic_candidate = true
-      end
-
-      case arpeggio_pattern
-      when 1..16
-        @step_division_candidate = 8
-      when 17..32
-        @step_division_candidate = 16
-      end
-
-      set_parameter_status((arpeggio_pattern - 1) % 8 + 1)
-    when 5
-      # filter cutoff
-      @midi.send_control_change(0x4A, value, @midi_channel)
-
-      if FOR_SAM2695
-        @midi.send_control_change(0x63, 0x01, @midi_channel)
-        @midi.send_control_change(0x62, 0x20, @midi_channel)
-        @midi.send_control_change(0x06, value, @midi_channel)
-      end
-
-      set_parameter_status_with_center_mark(value)
-    when 6
-      # filter resonance
-      @midi.send_control_change(0x47, value, @midi_channel)
-
-      if FOR_SAM2695
-        @midi.send_control_change(0x63, 0x01, @midi_channel)
-        @midi.send_control_change(0x62, 0x21, @midi_channel)
-        @midi.send_control_change(0x06, value, @midi_channel)
-      end
-
-      set_parameter_status_with_center_mark(value)
-    when 7
-      @synced_to_ext_clock = false
-      @bpm = value * 2 - 8
-      @bpm = 240 if @bpm > 240
-      @bpm = 30 if @bpm < 30
-      set_parameter_status_with_center_mark(value)
-    when 8
+    when KEY_ROOT_DEGREE_1, KEY_ROOT_DEGREE_2, KEY_ROOT_DEGREE_3, KEY_ROOT_DEGREE_4  # not a Range to avoid allocation
+      change_root_degree(key - KEY_ROOT_DEGREE_1, value)
+    when KEY_ARPEGGIO_PATTERN
+      change_arpeggio_pattern(value)
+    when KEY_FILTER_CUTOFF
+      change_filter_parameter(0x4A, 0x20, value)
+    when KEY_FILTER_RESONANCE
+      change_filter_parameter(0x47, 0x21, value)
+    when KEY_BPM
+      change_bpm(value)
+    when KEY_PLAYING
       if value > 0
-        @midi.send_start if @send_recv_start_stop
-        @playing = true
-        @playing_note = nil
-        @step = NUMBER_OF_STEPS - 1
-        @clock = CLOCKS_PER_STEP - 1
+        start
       else
-        @midi.send_stop if @send_recv_start_stop
-        @playing = false
-        @midi.send_note_off(@playing_note, NOTE_OFF_VELOCITY, @midi_channel) if !@playing_note.nil?
-        set_step_status(0)
-        set_sub_step_status(0)
+        stop
       end
-    when 9
+    when KEY_TRANSPOSE_DOWN
       @transpose_candidate -= 1 if @transpose_candidate > -24 && value == 1
       set_parameter_status_for_transpose(@transpose_candidate)
-    when 10
+    when KEY_TRANSPOSE_UP
       @transpose_candidate += 1 if @transpose_candidate < +24 && value == 1
       set_parameter_status_for_transpose(@transpose_candidate)
-    when 11
-      reversed_value = ((value & 0xF0) >> 4) | ((value & 0x0F) << 4)
-      reversed_value = ((reversed_value & 0xCC) >> 2) | ((reversed_value & 0x33) << 2)
-      reversed_value = ((reversed_value & 0xAA) >> 1) | ((reversed_value & 0x55) << 1)
-      @sub_steps_of_on_bits_candidate = reversed_value & 0xFF
+    when KEY_SUB_STEPS_OF_ON_BITS
+      # bit 7 of the Byte Switch is Sub-Step 1, so reverse the bits
+      @sub_steps_of_on_bits_candidate = reverse_bits(value)
       @parameter_status_bits = @sub_steps_of_on_bits_candidate
     end
   end
@@ -505,6 +448,68 @@ class Prmc1Core
 
   # private
 
+  def change_root_degree(step, value)
+    @root_degrees_candidate[step] = ((value / 4) % 16) + 1
+    @alternative_patterns_candidate[step] = (value >= 64)
+    set_parameter_status_with_flag((@root_degrees_candidate[step] - 1) % 7 + 1, @alternative_patterns_candidate[step])
+  end
+
+  def change_arpeggio_pattern(value)
+    arpeggio_pattern = value / 4 + 1
+    pattern_index = (arpeggio_pattern - 1) % 16
+
+    # odd patterns: Up (alternative: Up & Down), even patterns: Up & Down (alternative: Up)
+    if pattern_index % 2 == 0
+      @arpeggio_intervals_candidate             = ARPEGGIO_INTERVALS_UP[pattern_index / 2]
+      @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP_AND_DOWN[pattern_index / 2]
+    else
+      @arpeggio_intervals_candidate             = ARPEGGIO_INTERVALS_UP_AND_DOWN[pattern_index / 2]
+      @alternative_arpeggio_intervals_candidate = ARPEGGIO_INTERVALS_UP[pattern_index / 2]
+    end
+
+    @scale_is_pentatonic_candidate = (pattern_index >= 8)
+    @step_division_candidate = (arpeggio_pattern <= 16) ? 8 : 16
+
+    set_parameter_status((arpeggio_pattern - 1) % 8 + 1)
+  end
+
+  def change_filter_parameter(control_number, sam2695_nrpn_lsb, value)
+    @midi.send_control_change(control_number, value, @midi_channel)
+    @midi.send_nrpn(0x01, sam2695_nrpn_lsb, value, @midi_channel) if FOR_SAM2695
+    set_parameter_status_with_center_mark(value)
+  end
+
+  def change_bpm(value)
+    @synced_to_ext_clock = false
+    @bpm = value * 2 - 8
+    @bpm = 240 if @bpm > 240
+    @bpm = 30 if @bpm < 30
+    set_parameter_status_with_center_mark(value)
+  end
+
+  def start
+    @midi.send_start if @send_recv_start_stop
+    @playing = true
+    @playing_note = nil
+    @step = NUMBER_OF_STEPS - 1
+    @clock = CLOCKS_PER_STEP - 1
+  end
+
+  def stop
+    @midi.send_stop if @send_recv_start_stop
+    @playing = false
+    @midi.send_note_off(@playing_note, NOTE_OFF_VELOCITY, @midi_channel) if !@playing_note.nil?
+    set_step_status(0)
+    set_sub_step_status(0)
+  end
+
+  def reverse_bits(value)
+    value = ((value & 0xF0) >> 4) | ((value & 0x0F) << 4)
+    value = ((value & 0xCC) >> 2) | ((value & 0x33) << 2)
+    value = ((value & 0xAA) >> 1) | ((value & 0x55) << 1)
+    value & 0xFF
+  end
+
   def on_midi_clock
     @midi.send_clock
     return if !@playing
@@ -514,8 +519,8 @@ class Prmc1Core
       @clock = 0
       @root_degrees_candidate.each_with_index {|item, index| @root_degrees[index] = item }
       @alternative_patterns_candidate.each_with_index {|item, index| @alternative_patterns[index] = item }
-      @arpeggio_intervals_candidate.each_with_index {|item, index| @arpeggio_intervals[index] = item }
-      @alternative_arpeggio_intervals_candidate.each_with_index {|item, index| @alternative_arpeggio_intervals[index] = item }
+      @arpeggio_intervals = @arpeggio_intervals_candidate
+      @alternative_arpeggio_intervals = @alternative_arpeggio_intervals_candidate
       @step_division = @step_division_candidate
       @sub_steps_of_on_bits = @sub_steps_of_on_bits_candidate
       @scale_is_pentatonic = @scale_is_pentatonic_candidate
@@ -525,45 +530,57 @@ class Prmc1Core
       set_step_status(@step + 1)
     end
 
-    playing_note_old = @playing_note
+    clocks_per_sub_step = CLOCKS_PER_STEP / @step_division
 
-    if @clock % (CLOCKS_PER_STEP / @step_division) == 0
-      root = @root_degrees[@step]
-      root = [1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 11, 11, 12].at(root - 1) if @scale_is_pentatonic
-      sub_step = @clock / (CLOCKS_PER_STEP / @step_division)
+    # Note Off is processed before Note On, so that the new note is not stopped
+    # when both occur at the same clock (GATE_TIME = 6)
+    if @clock % clocks_per_sub_step == clocks_per_sub_step * GATE_TIME / 6 % clocks_per_sub_step
+      @midi.send_note_off(@playing_note, NOTE_OFF_VELOCITY, @midi_channel) if !@playing_note.nil?
+    end
+
+    if @clock % clocks_per_sub_step == 0
+      sub_step = @clock / clocks_per_sub_step
       set_sub_step_status((sub_step & 0x07) + 1)
-      arpeggio_intervals = @arpeggio_intervals
-      arpeggio_intervals = @alternative_arpeggio_intervals if @alternative_patterns[@step]
-      interval = arpeggio_intervals[sub_step % arpeggio_intervals.length]
-      @playing_note = nil
-      scale_notes = @scale_notes
-      scale_notes = @scale_notes_pentatonic if @scale_is_pentatonic
-      @playing_note = scale_notes[root + interval - 1] + @transpose if
-                      !root.nil? && !interval.nil? && ((1 << (sub_step % 8)) & @sub_steps_of_on_bits) > 0
-      @playing_note = 127 if !@playing_note.nil? && @playing_note > 127
+      @playing_note = note_of_sub_step(sub_step)
       @midi.send_note_on(@playing_note, NOTE_ON_VELOCITY, @midi_channel) if !@playing_note.nil?
     end
+  end
 
-    if @clock % (CLOCKS_PER_STEP / @step_division) ==
-       CLOCKS_PER_STEP * GATE_TIME / 6 / @step_division % (CLOCKS_PER_STEP / @step_division)
-      @midi.send_note_off(playing_note_old, NOTE_OFF_VELOCITY, @midi_channel) if !@playing_note.nil? 
+  # returns nil if no note is played
+  def note_of_sub_step(sub_step)
+    return nil if ((1 << (sub_step % 8)) & @sub_steps_of_on_bits) == 0
+    root = @root_degrees[@step]
+    return nil if root.nil?
+
+    arpeggio_intervals = @arpeggio_intervals
+    arpeggio_intervals = @alternative_arpeggio_intervals if @alternative_patterns[@step]
+    interval = arpeggio_intervals[sub_step % arpeggio_intervals.length]
+
+    if @scale_is_pentatonic
+      note = SCALE_NOTES_PENTATONIC[PENTATONIC_ROOT_DEGREES[root] + interval - 1]
+    else
+      note = SCALE_NOTES[root + interval - 1]
     end
+
+    note += @transpose
+    note = 127 if note > 127
+    note
   end
 
   def set_step_status(value)
-    @step_status_bits = [0x0, 0x1, 0x2, 0x4, 0x8].at(value)
+    @step_status_bits = ONE_HOT_BITS[value]
   end
 
   def set_sub_step_status(value)
-    @sub_step_status_bits = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80].at(value)
+    @sub_step_status_bits = ONE_HOT_BITS[value]
   end
 
   def set_parameter_status(value)
-    @parameter_status_bits = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80].at(value)
+    @parameter_status_bits = ONE_HOT_BITS[value]
   end
 
   def set_parameter_status_with_flag(value, flag)
-    @parameter_status_bits = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40].at(value) + (flag ? 0x80 : 0x00)
+    @parameter_status_bits = ONE_HOT_BITS[value] + (flag ? 0x80 : 0x00)
   end
 
   def set_parameter_status_with_center_mark(value)
@@ -572,15 +589,12 @@ class Prmc1Core
   end
 
   def set_parameter_status_for_transpose(value)
-    @parameter_status_bits = [0x01, 0x03, 0x02, 0x06, 0x04, 0x08, 0x18, 0x10, 0x30, 0x20, 0x60, 0x40].at((value + 12) % 12)
+    @parameter_status_bits = TRANSPOSE_STATUS_BITS[(value + 12) % 12]
   end
 end
 
 # setup
-i2c1 = I2C.new(unit: :RP2040_I2C1, frequency: 400_000, sda_pin: 6, scl_pin: 7, timeout: 2)
-angle8 = M5UnitAngle8.new(i2c: i2c1)
 dual_button = M5UnitDualButton.new(gpio_blue_button: 18, gpio_red_button: 19)
-byte_switch = M5UnitByteSwitch.new(i2c: i2c1)
 uart1 = UART.new(unit: :RP2040_UART1, txd_pin: 4, rxd_pin: 5, baudrate: 31_250)
 midi = Midi.new(uart: uart1)
 current_inputs = [nil, nil, nil, nil, nil, nil, nil, nil, 0, 0, 0, 0]
@@ -591,6 +605,10 @@ midi_channel = MIDI_CHANNEL_ALT if current_inputs[10] == 1
 send_recv_start_stop = SEND_RECV_START_STOP
 send_recv_start_stop = !send_recv_start_stop if current_inputs[9] == 1
 prmc1_core = Prmc1Core.new(midi: midi, midi_channel: midi_channel, send_recv_start_stop: send_recv_start_stop)
+i2c1 = RetryingI2C.new(i2c: I2C.new(unit: :RP2040_I2C1, frequency: 400_000, sda_pin: 6, scl_pin: 7, timeout: 2),
+                       sequencer: prmc1_core)
+angle8 = M5UnitAngle8.new(i2c: i2c1)
+byte_switch = M5UnitByteSwitch.new(i2c: i2c1)
 
 current_program = 0
 
@@ -598,25 +616,17 @@ if FOR_SAM2695
   midi.send_program_change(0x51, midi_channel)
 
   # envelope release time
-  midi.send_control_change(0x63, 0x01, midi_channel)
-  midi.send_control_change(0x62, 0x66, midi_channel)
-  midi.send_control_change(0x06, 0x60, midi_channel)
+  midi.send_nrpn(0x01, 0x66, 0x60, midi_channel)
 end
 
 led_builtin = GPIO.new(25, GPIO::OUT)
 led_builtin.write(1)
 
 # loop
+# (the sequencer is processed in each I2C transfer, see RetryingI2C)
 loop do
-  analog_input = 0
-  digital_input = 0
-  blue_button_input = 0
-  red_button_input = 0
-
   [6, 0, 1, 2, 3, 4, 5, 6, 7].each do |ch|
-    prmc1_core.process_sequencer
     angle8.prepare_to_get_analog_input(ch)
-    prmc1_core.process_sequencer
     analog_input = angle8.get_analog_input
 
     if current_inputs[ch].nil? ||
@@ -627,9 +637,7 @@ loop do
     end
   end
 
-  prmc1_core.process_sequencer
   angle8.prepare_to_get_digital_input
-  prmc1_core.process_sequencer
   digital_input = angle8.get_digital_input
 
   if current_inputs[8] != digital_input
@@ -656,9 +664,7 @@ loop do
     end
   end
 
-  prmc1_core.process_sequencer
   byte_switch.prepare_to_get_switch_status
-  prmc1_core.process_sequencer
   switch_status = byte_switch.get_switch_status
 
   if current_inputs[11] != switch_status
@@ -667,21 +673,17 @@ loop do
   end
 
   # workaround for CH1 blue LED flickering issue
-  prmc1_core.process_sequencer
   angle8.set_blue_led(7, 0)
 
   (0..3).each do |ch|
-    prmc1_core.process_sequencer
     angle8.set_blue_led(ch, (prmc1_core.step_status_bits >> ch & 0x01) * LED_ON_VALUE)
   end
 
   (0..7).each do |ch|
-    prmc1_core.process_sequencer
     byte_switch.set_led(ch, prmc1_core.sub_step_status_bits >> ch & 0x01)
   end
 
   (0..7).each do |ch|
-    prmc1_core.process_sequencer
     angle8.set_green_led(ch, (prmc1_core.parameter_status_bits >> ch & 0x01) * LED_ON_VALUE)
   end
 end
