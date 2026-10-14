@@ -302,6 +302,8 @@ end
 class Prmc1Core
   # keys of change_parameter
   KEY_ROOT_DEGREE_1         = 0
+  KEY_ROOT_DEGREE_2         = 1
+  KEY_ROOT_DEGREE_3         = 2
   KEY_ROOT_DEGREE_4         = 3
   KEY_ARPEGGIO_PATTERN      = 4
   KEY_FILTER_CUTOFF         = 5
@@ -403,7 +405,7 @@ class Prmc1Core
 
   def change_parameter(key, value)
     case key
-    when KEY_ROOT_DEGREE_1..KEY_ROOT_DEGREE_4
+    when KEY_ROOT_DEGREE_1, KEY_ROOT_DEGREE_2, KEY_ROOT_DEGREE_3, KEY_ROOT_DEGREE_4  # not a Range to avoid allocation
       change_root_degree(key - KEY_ROOT_DEGREE_1, value)
     when KEY_ARPEGGIO_PATTERN
       change_arpeggio_pattern(value)
