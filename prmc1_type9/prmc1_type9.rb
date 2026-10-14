@@ -286,6 +286,24 @@ end
 class Prmc1Core
   NUMBER_OF_STEPS = 4
   CLOCKS_PER_STEP = 96
+  SCALE_NOTES = [nil,  48,  50,  52,  53,  55,  57,  59,
+                       60,  62,  64,  65,  67,  69,  71,
+                       72,  74,  76,  77,  79,  81,  83,
+                       84,  86,  88,  89,  91,  93,  95,
+                       96,  98, 100, 101, 103, 105, 107,
+                      108, 110, 112, 113, 115, 117, 119,
+                      120, 122, 124, 125, 127]
+  SCALE_NOTES_PENTATONIC = [nil,  48,  50,  52,  55,  57,
+                                  60,  62,  64,  67,  69,
+                                  72,  74,  76,  79,  81,
+                                  84,  86,  88,  91,  93,
+                                  96,  98, 100, 103, 105,
+                                 108, 110, 112, 115, 117,
+                                 120, 122, 124, 127]
+  # root degree (1 - 16) in major scale -> root degree in major pentatonic scale
+  PENTATONIC_ROOT_DEGREES = [nil, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 11, 11, 12]
+  ONE_HOT_BITS = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
+  TRANSPOSE_STATUS_BITS = [0x01, 0x03, 0x02, 0x06, 0x04, 0x08, 0x18, 0x10, 0x30, 0x20, 0x60, 0x40]
 
   def initialize(midi:, midi_channel:, send_recv_start_stop:)
     @midi = midi
@@ -306,20 +324,6 @@ class Prmc1Core
     @sub_steps_of_on_bits = @sub_steps_of_on_bits_candidate
     @scale_is_pentatonic_candidate = false
     @scale_is_pentatonic = @scale_is_pentatonic_candidate
-    @scale_notes = [nil,  48,  50,  52,  53,  55,  57,  59,
-                          60,  62,  64,  65,  67,  69,  71,
-                          72,  74,  76,  77,  79,  81,  83,
-                          84,  86,  88,  89,  91,  93,  95,
-                          96,  98, 100, 101, 103, 105, 107,
-                         108, 110, 112, 113, 115, 117, 119,
-                         120, 122, 124, 125, 127]
-    @scale_notes_pentatonic = [nil,  48,  50,  52,  55,  57,
-                                     60,  62,  64,  67,  69,
-                                     72,  74,  76,  79,  81,
-                                     84,  86,  88,  91,  93,
-                                     96,  98, 100, 103, 105,
-                                    108, 110, 112, 115, 117,
-                                    120, 122, 124, 127]
     @playing = false
     @playing_note = nil
     @step = 0
@@ -534,15 +538,15 @@ class Prmc1Core
 
     if @clock % (CLOCKS_PER_STEP / @step_division) == 0
       root = @root_degrees[@step]
-      root = [1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 11, 11, 12].at(root - 1) if @scale_is_pentatonic
+      root = PENTATONIC_ROOT_DEGREES[root] if @scale_is_pentatonic
       sub_step = @clock / (CLOCKS_PER_STEP / @step_division)
       set_sub_step_status((sub_step & 0x07) + 1)
       arpeggio_intervals = @arpeggio_intervals
       arpeggio_intervals = @alternative_arpeggio_intervals if @alternative_patterns[@step]
       interval = arpeggio_intervals[sub_step % arpeggio_intervals.length]
       @playing_note = nil
-      scale_notes = @scale_notes
-      scale_notes = @scale_notes_pentatonic if @scale_is_pentatonic
+      scale_notes = SCALE_NOTES
+      scale_notes = SCALE_NOTES_PENTATONIC if @scale_is_pentatonic
       @playing_note = scale_notes[root + interval - 1] + @transpose if
                       !root.nil? && !interval.nil? && ((1 << (sub_step % 8)) & @sub_steps_of_on_bits) > 0
       @playing_note = 127 if !@playing_note.nil? && @playing_note > 127
@@ -551,19 +555,19 @@ class Prmc1Core
   end
 
   def set_step_status(value)
-    @step_status_bits = [0x0, 0x1, 0x2, 0x4, 0x8].at(value)
+    @step_status_bits = ONE_HOT_BITS[value]
   end
 
   def set_sub_step_status(value)
-    @sub_step_status_bits = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80].at(value)
+    @sub_step_status_bits = ONE_HOT_BITS[value]
   end
 
   def set_parameter_status(value)
-    @parameter_status_bits = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80].at(value)
+    @parameter_status_bits = ONE_HOT_BITS[value]
   end
 
   def set_parameter_status_with_flag(value, flag)
-    @parameter_status_bits = [0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40].at(value) + (flag ? 0x80 : 0x00)
+    @parameter_status_bits = ONE_HOT_BITS[value] + (flag ? 0x80 : 0x00)
   end
 
   def set_parameter_status_with_center_mark(value)
@@ -572,7 +576,7 @@ class Prmc1Core
   end
 
   def set_parameter_status_for_transpose(value)
-    @parameter_status_bits = [0x01, 0x03, 0x02, 0x06, 0x04, 0x08, 0x18, 0x10, 0x30, 0x20, 0x60, 0x40].at((value + 12) % 12)
+    @parameter_status_bits = TRANSPOSE_STATUS_BITS[(value + 12) % 12]
   end
 end
 
