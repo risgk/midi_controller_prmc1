@@ -151,6 +151,13 @@ class Midi
     send_message((0xC0 + channel - 1).chr + program_number.chr)
   end
 
+  # NRPN with Data Entry MSB only
+  def send_nrpn(parameter_number_msb, parameter_number_lsb, value, channel)
+    send_control_change(0x63, parameter_number_msb, channel)
+    send_control_change(0x62, parameter_number_lsb, channel)
+    send_control_change(0x06, value, channel)
+  end
+
   # System Real-Time messages may be sent at any time (even during SysEx)
   def send_clock
     @uart.write(0xF8.chr)
@@ -441,9 +448,7 @@ class Prmc1Core
       @midi.send_control_change(0x4A, value, @midi_channel)
 
       if FOR_SAM2695
-        @midi.send_control_change(0x63, 0x01, @midi_channel)
-        @midi.send_control_change(0x62, 0x20, @midi_channel)
-        @midi.send_control_change(0x06, value, @midi_channel)
+        @midi.send_nrpn(0x01, 0x20, value, @midi_channel)
       end
 
       set_parameter_status_with_center_mark(value)
@@ -452,9 +457,7 @@ class Prmc1Core
       @midi.send_control_change(0x47, value, @midi_channel)
 
       if FOR_SAM2695
-        @midi.send_control_change(0x63, 0x01, @midi_channel)
-        @midi.send_control_change(0x62, 0x21, @midi_channel)
-        @midi.send_control_change(0x06, value, @midi_channel)
+        @midi.send_nrpn(0x01, 0x21, value, @midi_channel)
       end
 
       set_parameter_status_with_center_mark(value)
@@ -600,9 +603,7 @@ if FOR_SAM2695
   midi.send_program_change(0x51, midi_channel)
 
   # envelope release time
-  midi.send_control_change(0x63, 0x01, midi_channel)
-  midi.send_control_change(0x62, 0x66, midi_channel)
-  midi.send_control_change(0x06, 0x60, midi_channel)
+  midi.send_nrpn(0x01, 0x66, 0x60, midi_channel)
 end
 
 led_builtin = GPIO.new(25, GPIO::OUT)
