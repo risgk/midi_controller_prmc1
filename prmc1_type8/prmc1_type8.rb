@@ -326,7 +326,12 @@ class Prmc1Core
 
       set_parameter_status_with_center_mark(value)
     when 7
-      @synced_to_ext_clock = false
+      if @synced_to_ext_clock
+        # Back to the internal clock from now, not with the time passed while synced to the external clock
+        @usec = Time.now.usec
+        @usec_remain = 0
+        @synced_to_ext_clock = false
+      end
       @bpm = value * 2 - 8
       @bpm = 240 if @bpm > 240
       @bpm = 30 if @bpm < 30

@@ -1,7 +1,7 @@
 MIDI Controller PRMC-1 (type-8)
 ===============================
 
-**Version 0.2.2 (2026-09-28)**
+**Version 0.2.3 (2026-11-15)**
 
 MIDI Controller made with PicoRuby/R2P2 by ISGK Instruments (Ryo Ishigaki)
 
@@ -73,6 +73,11 @@ Usage
 
 [MIDI Implementation Chart](./MIDI_Implementation_Chart.md)
 ----------------------------------------------------------
+
+Change History
+--------------
+
+- Version 0.2.3 (2026-11-15): Fix the sequencer advancing by up to about 1 second at once when the BPM Knob is turned after the MIDI clock was received
 
 Known Issues
 ------------
