@@ -82,7 +82,7 @@ Change History
 --------------
 
 - Version 0.3.2 (2026-11-15): Fix the sequencer advancing by up to about 1 second at once when the BPM Knob is turned after the MIDI clock was received
-- Version 0.3.0 (2026-08-17): Fix NoMethodError by adding nil check
+- Version 0.3.1 (2026-08-17): Fix NoMethodError by adding nil check
 - Version 0.3.0 (2026-08-16): Change GATE_TIME to 3
 - Version 0.2.0 (2026-08-16): Change to use R2P2 PICO2_W 0.5.0
 - Version 0.1.2 (2026-08-12): Improve code style
